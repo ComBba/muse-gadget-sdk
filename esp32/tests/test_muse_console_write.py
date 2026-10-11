@@ -41,6 +41,7 @@ int usb_serial_jtag_is_connected(void);
 int uart_read_bytes(int, void *, unsigned, unsigned);
 int uart_write_bytes(int, const void *, unsigned);
 ''',
+                'driver/usb_serial_jtag_vfs.h': 'void usb_serial_jtag_vfs_use_driver(void);\n',
                 'driver/uart_vfs.h': 'void uart_vfs_dev_use_driver(int);\n',
             }
             for name, text in headers.items():
@@ -55,6 +56,7 @@ static unsigned calls, bytes, maxwait, maxchunk;
 static int scenario;
 static unsigned char captured[400];
 int usb_serial_jtag_driver_install(const usb_serial_jtag_driver_config_t *c) {(void)c;return 0;}
+void usb_serial_jtag_vfs_use_driver(void) {}
 int usb_serial_jtag_read_bytes(void *p,unsigned n,unsigned t) {(void)p;(void)n;(void)t;return 0;}
 int usb_serial_jtag_is_connected(void) {return 1;}
 static int write_fake(const void *p,unsigned n,unsigned t) {
