@@ -21,7 +21,7 @@ class ConsoleInstall(unittest.TestCase):
             headers = {
                 'esp_err.h': 'typedef int esp_err_t;\n#define ESP_OK 0\n',
                 'sdkconfig.h': f'#define CONFIG_MUSE_CONSOLE_UART {int(uart)}\n#define CONFIG_PM_LIGHT_SLEEP_CALLBACKS 0\n#define CONFIG_ESP_CONSOLE_UART_NUM 0\n',
-                'freertos/FreeRTOS.h': '#define portMAX_DELAY 0xffffffffu\n',
+                'freertos/FreeRTOS.h': '#define portMAX_DELAY 0xffffffffu\n#define pdMS_TO_TICKS(ms) (ms)\n',
                 'driver/usb_serial_jtag.h': '''typedef struct {int rx_buffer_size;} usb_serial_jtag_driver_config_t;
 #define USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT() ((usb_serial_jtag_driver_config_t){0})
 int usb_serial_jtag_driver_install(const usb_serial_jtag_driver_config_t *);
