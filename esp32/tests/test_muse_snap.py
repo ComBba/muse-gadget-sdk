@@ -45,6 +45,12 @@ class SnapshotDecoder(unittest.TestCase):
         lines.insert(2, 'I (101) codec: started')
         self.assertEqual(snap.decode_snapshot('\r\n'.join(lines) + '\r\n')[2], self.raw)
 
+    def test_uart_log_prefix_on_end_marker(self):
+        for prefix in ('I (102) codec: partial', 'I'):
+            with self.subTest(prefix=prefix):
+                transfer = self.transfer.replace('\nSNAP END', '\n' + prefix + 'SNAP END')
+                self.assertEqual(snap.decode_snapshot(transfer)[2], self.raw)
+
     def test_missing_pixel_line(self):
         for index in (1, 100, len(self.transfer.splitlines()) - 2):
             with self.subTest(index=index), self.assertRaises(ValueError):

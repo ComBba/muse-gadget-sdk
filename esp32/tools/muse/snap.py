@@ -45,10 +45,11 @@ def decode_snapshot(log):
     if not w or not h or not per_line:
         raise ValueError('invalid snapshot dimensions or chunk size')
     body = log[header.end():]
-    end = re.search(r'(?m)^SNAP END\r?(?:\n|$)', body)
+    # The end marker can follow a log fragment, like a pixel line.
+    end = re.search(r'SNAP END\r?(?:\n|$)', body)
     if not end:
         raise ValueError('missing snapshot end marker')
-    lines = iter(body[:end.start()].splitlines())
+    lines = iter(body[:end.start()].rpartition('\n')[0].splitlines())
     raw = bytearray()
     # UART logs may prefix a base64 line; preserve the existing tail handling.
     for n in [min(per_line, w * 2 - x) for _ in range(h)
