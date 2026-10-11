@@ -129,7 +129,8 @@ static int mbedtls_base64_encode(unsigned char *b,size_t cap,size_t *out,const u
 }
 static bool muse_console_write(const void *p,size_t n) {
     (void)n;writes++;if(writes==failure)return false;
-    if(!memcmp(p,"SNAP END",8))ended++;return true;
+    if(!memcmp(p,"SNAP END",8))ended++;
+    return true;
 }
 """
         # Execute the actual UI function, isolating unrelated UI/LVGL machinery.
