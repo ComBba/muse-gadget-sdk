@@ -80,7 +80,8 @@ int main(int argc,char **argv) {
 '''
             (p / 'harness.c').write_text(harness)
             command = [*shlex.split(os.environ.get('CC', 'cc')), '-std=c11', '-Wall', '-Wextra', '-Werror', '-I', str(p), '-I', str(ROOT / 'components/muse'), str(ROOT / 'components/muse/muse_console.c'), str(p/'harness.c'), '-o', str(p/'run')]
-            subprocess.run(command, check=True, capture_output=True)
+            built = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(built.returncode, 0, built.stderr)
             r=subprocess.run([str(p/'run'),str(scenario)],check=True,capture_output=True,text=True,timeout=2)
             return list(map(int,r.stdout.split()))
 
@@ -140,7 +141,8 @@ int main(int argc,char **argv) {(void)argc;failure=atoi(argv[1]);send_snapshot()
 """
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp);(p/'test.c').write_text(harness)
-            subprocess.run([*shlex.split(os.environ.get('CC','cc')),'-std=c11','-Wall','-Wextra','-Werror',str(p/'test.c'),'-o',str(p/'run')],check=True,capture_output=True)
+            built=subprocess.run([*shlex.split(os.environ.get('CC','cc')),'-std=c11','-Wall','-Wextra','-Werror',str(p/'test.c'),'-o',str(p/'run')],capture_output=True,text=True)
+            self.assertEqual(built.returncode,0,built.stderr)
             r=subprocess.run([str(p/'run'),str(failure)],check=True,text=True,capture_output=True,timeout=2)
             return list(map(int,r.stdout.split()))
 
