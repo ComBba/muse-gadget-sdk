@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'tools/muse/snap.py'
 spec = importlib.util.spec_from_file_location('muse_snap', SCRIPT)
@@ -114,6 +116,64 @@ class SnapshotCLI(unittest.TestCase):
         result, output = self.run_capture(packet(b'\x00\xf8', 1, 1))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(output.startswith(b'\x89PNG\r\n\x1a\n'))
+
+
+class SnapshotTransportCompatibility(unittest.TestCase):
+    def capture(self, slow=False):
+        now = [0]
+        control = []
+        raw = b'\x00\xf8' * (412 * 412 if slow else 1)
+        transfer = packet(raw, 412, 412) if slow else packet(raw, 1, 1)
+        header, body = transfer.split('\n', 1)
+
+        def clock():
+            value = now[0]
+            now[0] += 1
+            return value
+
+        class Serial:
+            fd = 99
+            ready = False
+            sent_header = False
+            done = False
+
+            def write(self, data):
+                if data == b'p':
+                    self.ready = True
+
+            def read(self, size):
+                if not self.ready or self.done:
+                    return b''
+                if slow and not self.sent_header:
+                    self.sent_header = True
+                    return (header + '\n').encode()
+                if slow and now[0] < 30:
+                    return b''
+                self.done = True
+                return body.encode() if slow else transfer.encode()
+
+        termios = SimpleNamespace(
+            HUPCL=0x400, TCSANOW=0,
+            tcgetattr=lambda fd: [0, 0, 0x400, 0, 0, 0, []],
+            tcsetattr=lambda fd, mode, attrs: control.append((fd, mode, attrs[2])),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'screen.png'
+            with patch.dict(sys.modules, serial=SimpleNamespace(Serial=lambda *a, **kw: Serial()), termios=termios), \
+                    patch.object(sys, 'argv', [str(SCRIPT), 'fake-port', '', str(output)]), \
+                    patch.object(snap.time, 'time', clock):
+                snap.main()
+            return control, output.read_bytes()
+
+    def test_keeps_control_lines_when_capture_port_closes(self):
+        control, output = self.capture()
+        self.assertEqual(control, [(99, 0, 0)])
+        self.assertTrue(output.startswith(b'\x89PNG'))
+
+    def test_large_uart_frame_can_finish_after_twenty_seconds(self):
+        _, output = self.capture(slow=True)
+        self.assertTrue(output.startswith(b'\x89PNG'))
+        self.assertEqual(__import__('struct').unpack('>II', output[16:24]), (1236, 1236))
 
 
 if __name__ == '__main__':
