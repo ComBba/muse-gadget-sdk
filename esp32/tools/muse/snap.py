@@ -69,7 +69,12 @@ def decode_snapshot(log):
         else:
             raise ValueError(f'missing pixel bytes: expected {w * h * 2}, got {len(raw)}')
     for line in lines:
-        if re.fullmatch(r'[A-Za-z0-9+/]+={0,2}', line):
+        # Logs can leave bare tails here; only a pixel-sized chunk is extra data.
+        try:
+            extra = base64.b64decode(line, validate=True)
+        except ValueError:
+            continue
+        if len(extra) in (per_line, n):
             raise ValueError('unexpected extra pixel data')
     return w, h, bytes(raw)
 

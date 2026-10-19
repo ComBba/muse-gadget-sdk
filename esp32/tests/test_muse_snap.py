@@ -53,6 +53,18 @@ class SnapshotDecoder(unittest.TestCase):
                 transfer = self.transfer.replace('\nSNAP END', '\n' + prefix + 'SNAP END')
                 self.assertEqual(snap.decode_snapshot(transfer)[2], self.raw)
 
+    def test_uart_log_tail_after_last_pixel_line(self):
+        for width, fragment in ((135, 'rted'), (135, 'ready'), (135, 'I'),
+                                (368, 'a' * 32), (800, 'a' * 32)):
+            with self.subTest(width=width, fragment=fragment):
+                raw = b'\x00\xf8' * width
+                transfer = packet(raw, width, 1).replace('SNAP END', fragment + '\nSNAP END')
+                try:
+                    frame = snap.decode_snapshot(transfer)
+                except ValueError as error:
+                    self.fail(f'complete frame rejected after a UART log fragment: {error}')
+                self.assertEqual(frame, (width, 1, raw))
+
     def test_missing_pixel_line(self):
         for index in (1, 100, len(self.transfer.splitlines()) - 2):
             with self.subTest(index=index), self.assertRaises(ValueError):
@@ -71,6 +83,18 @@ class SnapshotDecoder(unittest.TestCase):
     def test_extra_pixels(self):
         with self.assertRaises(ValueError):
             snap.decode_snapshot(packet(b'\x00\xf8', 1, 1).replace('SNAP END', 'APg=\nSNAP END'))
+
+    def test_extra_full_chunk_after_wide_frame(self):
+        transfer = packet(b'\x00\xf8' * 800, 800, 1)
+        extra = base64.b64encode(b'\x00\xf8' * 72).decode()
+        with self.assertRaises(ValueError):
+            snap.decode_snapshot(transfer.replace('SNAP END', extra + '\nSNAP END'))
+
+    def test_extra_row_tail_chunk_after_wide_frame(self):
+        transfer = packet(b'\x00\xf8' * 800, 800, 1)
+        extra = base64.b64encode(b'\x00\xf8' * 8).decode()
+        with self.assertRaises(ValueError):
+            snap.decode_snapshot(transfer.replace('SNAP END', extra + '\nSNAP END'))
 
     def test_zero_chunk_size(self):
         with self.assertRaises(ValueError):
@@ -114,6 +138,12 @@ class SnapshotCLI(unittest.TestCase):
 
     def test_complete_capture_writes_png(self):
         result, output = self.run_capture(packet(b'\x00\xf8', 1, 1))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(output.startswith(b'\x89PNG\r\n\x1a\n'))
+
+    def test_complete_capture_with_uart_log_tail_writes_png(self):
+        transfer = packet(b'\x00\xf8' * 800, 800, 1).replace('SNAP END', 'a' * 32 + '\nSNAP END')
+        result, output = self.run_capture(transfer)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(output.startswith(b'\x89PNG\r\n\x1a\n'))
 
