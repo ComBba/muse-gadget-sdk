@@ -187,6 +187,14 @@ class Installing(unittest.TestCase):
             avatar.make_avatar(board, None, avatar.ask(board, "draw yourself", "reply"))
         self.assertUntouched()
 
+    def test_errors_name_your_avatar_not_the_scratch_copy(self):
+        board = FakeBoard(chat_reply(fenced(NO_BUILD)), chat_reply(fenced(NO_BUILD)))
+        with self.assertRaises(avatar.Stop) as stop:
+            avatar.make_avatar(board, None, fenced(NO_BUILD))
+        for told in board.sent + [str(stop.exception)]:
+            self.assertIn("components/muse/avatar/muse_pixel.c:", told)
+            self.assertNotIn(".work-", told)
+
     def test_a_reply_that_does_not_add_up_is_not_installed(self):
         r = chat_reply(fenced(GOOD_B))
         r.sizes[0] += 1   # the board counted a byte more than arrived, with no line missing
@@ -283,6 +291,13 @@ class FirmwareBuild(unittest.TestCase):
         with mock.patch.object(avatar, "ask", ask):
             avatar.make_avatar(board, "s3", fenced(GOOD_B))
         self.assertEqual(len(roots), 1)
+
+    def test_firmware_build_errors_name_your_avatar_not_the_copy(self):
+        root = os.path.join(self.tmp, "work", "esp32")
+        Path(avatar.BUILD_LOG.format("s3")).write_text(
+            f"{root}/components/muse/avatar/muse_pixel.c:12:5: error: oops\n  x\n  ^\n")
+        self.assertEqual(avatar.build_errors("s3", root).splitlines()[0],
+                         "components/muse/avatar/muse_pixel.c:12:5: error: oops")
 
     def test_a_firmware_build_error_elsewhere_leaves_yours(self):
         self.result = (False, "failed")

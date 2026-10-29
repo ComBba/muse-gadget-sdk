@@ -64,6 +64,7 @@ ROOT = make_gifs.ROOT
 AVATAR_DIR = os.path.join(ROOT, "components", "muse", "avatar")
 AVATAR_SRC = make_gifs.CUSTOM_SRC
 LAST_REPLY = os.path.join(AVATAR_DIR, "last_reply.md")
+AVATAR_NAME = os.path.join("components", "muse", "avatar", "muse_pixel.c")   # as Muse and you see it
 BUILD_LOG = "/tmp/muse_build_{}.log"   # where board.sh build logs
 LOCK = ".lock"
 TMP_SUFFIX = ".tmp"
@@ -238,8 +239,11 @@ def description(code):
 
 # ---- Build ----
 
-def clip(out, n=ERROR_LINES):
-    """The first `n` lines of compiler output, with paths relative to esp32/ (they go to Muse)."""
+def clip(out, n=ERROR_LINES, candidate=None):
+    """The first `n` lines of compiler output, with paths relative to esp32/ (they go to Muse).
+    `candidate`, the scratch copy of Muse's file that was checked, is named as the avatar's own."""
+    for path in {candidate, os.path.realpath(candidate)} if candidate else ():
+        out = out.replace(path, AVATAR_NAME)
     return "\n".join([l for l in out.replace(ROOT + os.sep, "").splitlines() if l.strip()][:n])
 
 
@@ -255,25 +259,27 @@ def host_check(src, gifs_dir=None):
         exe = os.path.join(tmp, "anim")
         p = subprocess.run(cc + ["-o", exe], cwd=ROOT, capture_output=True, text=True)
         if p.returncode:
-            return clip(p.stdout + p.stderr), None
+            return clip(p.stdout + p.stderr, candidate=src), None
         # Out-of-bounds writes corrupt memory on the board rather than crash, so look for them here.
         san = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
         if subprocess.run(cc + san + ["-o", exe], cwd=ROOT, capture_output=True).returncode == 0:
             os.makedirs(os.path.join(tmp, "frames"))
             p = subprocess.run([exe, os.path.join(tmp, "frames")], capture_output=True, text=True)
             if p.returncode:
-                return "It crashed while drawing the animations:\n" + clip(p.stderr, 30), None
+                return "It crashed while drawing the animations:\n" + clip(p.stderr, 30, src), None
     try:
         return None, make_gifs.render(src, gifs_dir or os.path.join(AVATAR_DIR, "gifs"))
     except ImportError:
         say("  (no GIF previews without Pillow: python3 -m pip install pillow)")
     except subprocess.CalledProcessError as e:
-        return clip((e.stdout or "") + (e.stderr or "")) or f"It exits with status {e.returncode}.", None
+        return (clip((e.stdout or "") + (e.stderr or ""), candidate=src)
+                or f"It exits with status {e.returncode}."), None
     return None, []
 
 
-def build_errors(key):
-    """What in the firmware build log is about the avatar, or None if the failure is elsewhere."""
+def build_errors(key, root=ROOT):
+    """What in the firmware build log of the tree at `root` is about the avatar, or None if the
+    failure is elsewhere."""
     try:
         with open(BUILD_LOG.format(key), encoding="utf-8", errors="replace") as f:
             lines = f.read().splitlines()
@@ -283,7 +289,7 @@ def build_errors(key):
     for i, l in enumerate(lines):
         if "avatar/muse_pixel.c:" in l and re.search(r"(error|warning):", l):
             keep += lines[i:i + 4]   # the message, then the source line and the caret
-    return clip("\n".join(keep)) or None
+    return clip("\n".join(keep), candidate=os.path.join(root, AVATAR_NAME)) or None
 
 
 def board_sh(*args, root=ROOT):
@@ -552,7 +558,7 @@ def make_avatar(board, key, reply, work=None):
             if not errors and key:
                 ok, out, root = build_candidate(src, key, round_dir)
                 if not ok:
-                    errors = build_errors(key)
+                    errors = build_errors(key, root)
                     if not errors:
                         raise Stop(out + f"\n\nThe firmware build failed, but not in the avatar. See "
                                    f"{BUILD_LOG.format(key)}. Your avatar is as it was.")

@@ -93,7 +93,7 @@ the serial port.
 |---|---|
 | 0 | Done |
 | 1 | Muse's file didn't work, or the build or flash failed. The message says which |
-| 2 | No board found, the board doesn't answer, or it can't chat over USB |
+| 2 | No board found, the board doesn't answer, or it can't chat over USB (or another `avatar.py` is still running) |
 | 3 | The board isn't on Wi-Fi or isn't connected to your Muse |
 
 When the board doesn't answer, it's usually running firmware from before

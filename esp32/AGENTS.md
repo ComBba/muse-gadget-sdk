@@ -386,7 +386,8 @@ and flashes. Progress and errors go to stderr. Relay the
 line that starts with `Muse drew:` and the GIF paths. On failure, pass the
 message on. The exit status says what kind of failure it was:
 
-- **2**: no board, or it can't do this. If it says the board doesn't answer,
+- **2**: no board, or it can't do this (or another `avatar.py` is still
+  running: let it finish). If it says the board doesn't answer,
   rerun with `--board s3` or `--board aipi` (from the board's name, or ask) to
   flash firmware that can. On the C6 boards or Watcher, follow the manual steps in
   `tools/muse/AVATAR_RECIPE.md`.
