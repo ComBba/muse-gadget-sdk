@@ -298,6 +298,39 @@ class SameConfiguration(unittest.TestCase):
             avatar.build_candidate(str(self.src), "c6", os.path.join(self.tmp, "work"))
         self.assertEqual(self.seen["sdkconfig"], yours)
 
+    def test_the_video_build_has_its_own(self):
+        self.expect_dir = "build-muse-waveshare-s3-175c-video"
+        self.mine("build-muse-waveshare-s3-175c")       # not this one
+        yours = self.mine(self.expect_dir)
+        with mock.patch.dict(os.environ, {"MUSE_VIDEO": "1"}):
+            avatar.build_candidate(str(self.src), "s3", os.path.join(self.tmp, "work"))
+        self.assertEqual(self.seen["sdkconfig"], yours)
+
+    def test_build_dirs_follow_board_sh(self):
+        # board.sh adds -video, then -bench; an empty variable is unset to it.
+        for env, suffix in (({}, ""), ({"MUSE_BENCH": "1"}, "-bench"), ({"MUSE_VIDEO": "1"}, "-video"),
+                            ({"MUSE_VIDEO": "1", "MUSE_BENCH": "1"}, "-video-bench"),
+                            ({"MUSE_VIDEO": "", "MUSE_BENCH": ""}, "")):
+            with self.subTest(env=env), mock.patch.dict(os.environ, env):
+                for var in ("MUSE_VIDEO", "MUSE_BENCH"):
+                    if var not in env:
+                        os.environ.pop(var, None)
+                self.assertEqual(avatar.build_dir("s3"), "build-muse-waveshare-s3-175c" + suffix)
+                self.assertEqual(avatar.build_dir("echoear"), "build-muse-ostb-echoear-2st" + suffix)
+
+    def test_every_board_has_a_build_dir(self):
+        for key in sorted(set(avatar.BOARDS.values())):
+            with self.subTest(board=key):
+                self.assertTrue(avatar.build_dir(key).startswith("build-muse-"))
+
+    def test_the_flash_command_names_the_build_options(self):
+        with mock.patch.dict(os.environ, {"MUSE_VIDEO": "1", "MUSE_BENCH": "1"}):
+            self.assertTrue(avatar.flash_command("s3", "PORT0").startswith("MUSE_VIDEO=1 MUSE_BENCH=1 "))
+        with mock.patch.dict(os.environ, {}):
+            os.environ.pop("MUSE_VIDEO", None)
+            os.environ.pop("MUSE_BENCH", None)
+            self.assertNotIn("MUSE_", avatar.flash_command("s3", "PORT0"))
+
     def test_without_a_build_of_yours_it_starts_from_the_defaults(self):
         self.expect_dir = "build-muse-waveshare-s3-175c"
         avatar.build_candidate(str(self.src), "s3", os.path.join(self.tmp, "work"))

@@ -47,6 +47,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -305,13 +306,18 @@ def copy_tree(dest):
     return dest
 
 
+# board.sh's build options, in the order it adds their build directory suffixes
+PROFILE_ENV = (("MUSE_VIDEO", "-video"), ("MUSE_BENCH", "-bench"))
+
+
 def build_dir(key, root=ROOT):
-    """board.sh's build directory for `key` (build-muse-PROFILE, with -bench under MUSE_BENCH)."""
+    """board.sh's build directory for `key`: build-muse-PROFILE, then -video under MUSE_VIDEO
+    and -bench under MUSE_BENCH."""
     with open(os.path.join(root, "tools", "muse", "board.sh"), encoding="utf-8") as f:
         m = re.search(rf"^\s*{re.escape(key)}\)\s+profile=([\w.-]+);", f.read(), re.M)
     if not m:
         raise Stop(f"tools/muse/board.sh has no board {key}.", 2)
-    return f"build-muse-{m.group(1)}" + ("-bench" if os.environ.get("MUSE_BENCH") else "")
+    return f"build-muse-{m.group(1)}" + "".join(s for var, s in PROFILE_ENV if os.environ.get(var))
 
 
 def build_candidate(src, key, work):
@@ -338,7 +344,8 @@ def build_candidate(src, key, work):
 
 
 def flash_command(key, port, root=ROOT):
-    return f"{rel(os.path.join(root, 'tools', 'muse', 'board.sh'))} flash {key} {port or 'PORT'}"
+    env = "".join(f"{var}={shlex.quote(os.environ[var])} " for var, _ in PROFILE_ENV if os.environ.get(var))
+    return f"{env}{rel(os.path.join(root, 'tools', 'muse', 'board.sh'))} flash {key} {port or 'PORT'}"
 
 
 def flash(key, port, root=ROOT):

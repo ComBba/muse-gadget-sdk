@@ -380,8 +380,9 @@ python3 tools/muse/avatar.py --edit "CHANGE"    # change the one they have
 ```
 
 It checks the board, asks their Muse for the renderer through the board,
-saves it to `components/muse/avatar/muse_pixel.c` (gitignored), checks it on
-the host, then builds and flashes. Progress and errors go to stderr. Relay the
+checks it on the host and builds the firmware with it in a copy of the tree,
+and only then saves it to `components/muse/avatar/muse_pixel.c` (gitignored)
+and flashes. Progress and errors go to stderr. Relay the
 line that starts with `Muse drew:` and the GIF paths. On failure, pass the
 message on. The exit status says what kind of failure it was:
 
@@ -393,7 +394,10 @@ message on. The exit status says what kind of failure it was:
   no device token, so their Muse isn't connected. Tell them, and point them to
   the Muse app or `tools/muse/ble_setup.html`.
 - **1**: Muse's file still fails after two fix rounds, or the build or flash
-  failed. The previous avatar is in `muse_pixel.c.prev`, next to the new one.
+  failed. A file that fails a check or the build isn't saved: their avatar is
+  as it was. If only the flash failed, the new avatar is saved (the one before
+  is `muse_pixel.c.prev`) and its checked build stays in
+  `components/muse/avatar/firmware-BOARD/`; the error says how to flash it.
 
 Don't commit anything in `components/muse/avatar/`. To see what the board
 says, run `python3 tools/muse/chat.py --status`. To ask their Muse something,
