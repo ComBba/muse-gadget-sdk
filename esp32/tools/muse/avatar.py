@@ -70,9 +70,8 @@ TMP_SUFFIX = ".tmp"
 # What a copy of the tree for a firmware build leaves out: builds, downloads, and
 # your avatar (the candidate goes there instead).
 COPY_IGNORE = ("build", "build-*", "managed_components", "dependencies.lock", "sdkconfig", "sdkconfig.old",
-               "__pycache__", ".git")
+               "__pycache__", ".git", "tmp", ".cache")
 PROMPT = os.path.join(HERE, "avatar_prompt.md")
-BOARD_SH = os.path.join(HERE, "board.sh")
 API = ("muse_pixel_accent", "muse_pixel_render", "muse_pixel_set_size", "muse_pixel_scale")
 FIX_ROUNDS = 2
 ERROR_LINES = 60
@@ -206,7 +205,8 @@ def ask(board, text, what):
             sys.stderr.write("\n")
     if not reply.intact() or not reply.complete:
         save_reply(reply.text)
-        why = (f"{reply.lost} console line(s) went missing on the way" if not reply.intact()
+        why = (f"{reply.lost} console line(s) went missing on the way" if reply.lost
+               else "its messages don't add up to what the board received" if not reply.intact()
                else "it was cut off before Muse finished")
         raise Stop(f"Muse's reply didn't arrive whole ({why}), so it isn't used and your avatar is as it was. "
                    f"It's saved in {rel(LAST_REPLY)}. Run this again; if you're sure the file in it is "
@@ -302,7 +302,8 @@ def copy_tree(dest):
     """This tree, without builds or your avatar, at `dest`: a candidate builds there, leaving yours alone."""
     shutil.copytree(ROOT, dest, symlinks=True, ignore=lambda d, names: [
         n for n in names if any(fnmatch.fnmatch(n, pat) for pat in COPY_IGNORE)
-        or os.path.join(d, n) in (AVATAR_DIR, os.path.join(ROOT, "components", "muse", "avatar"))])
+        or os.path.join(d, n) in (AVATAR_DIR, os.path.join(ROOT, "components", "muse", "avatar"),
+                                  os.path.join(ROOT, "gifs"))])
     return dest
 
 
@@ -506,10 +507,13 @@ def save_reply(reply):
 
 
 def promote(code, gifs_dir):
-    """Makes the checked `code` your avatar, keeping the one it replaces as muse_pixel.c.prev."""
+    """Makes the checked `code` your avatar, keeping the one it replaces as muse_pixel.c.prev
+    (unless it's the same file: that would lose the one before)."""
     if os.path.exists(AVATAR_SRC):
         with open(AVATAR_SRC, encoding="utf-8") as f:
-            write_atomic(AVATAR_SRC + ".prev", f.read())
+            old = f.read()
+        if old != code:
+            write_atomic(AVATAR_SRC + ".prev", old)
     write_atomic(AVATAR_SRC, code)
     if gifs_dir and os.path.isdir(gifs_dir):
         gifs = os.path.join(AVATAR_DIR, "gifs")
@@ -567,6 +571,7 @@ def make_avatar(board, key, reply, work=None):
                     return Made(gifs, None)
                 return Made(gifs, keep_build(root, record))
             shutil.rmtree(gifs_dir, ignore_errors=True)
+            shutil.rmtree(round_dir, ignore_errors=True)   # its tree copy and build
             if board is None or attempt == FIX_ROUNDS:
                 raise Stop(errors + "\n\nThe muse_pixel.c Muse sent doesn't build or run, so your avatar is as it "
                            f"was. Muse's reply is in {rel(LAST_REPLY)}.")
@@ -576,7 +581,6 @@ def make_avatar(board, key, reply, work=None):
     finally:
         if own:
             shutil.rmtree(work, ignore_errors=True)
-
 
 
 def main():

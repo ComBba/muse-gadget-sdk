@@ -76,6 +76,8 @@ What it does, step by step:
    stays in `components/muse/avatar/firmware-BOARD/`, with the hashes of its
    avatar and app image in `VERIFIED`, and the tool prints the command that
    flashes it. A later run that fails leaves it; a new avatar replaces it.
+   Your own `build-muse-*/` isn't rebuilt: `tools/muse/board.sh flash` there
+   flashes the avatar before until a `board.sh build` picks up the new one.
 
 Options: `--no-flash` stops after the build and keeps it, `--port` picks the board when
 more than one is plugged in, and `--reply FILE` skips asking Muse and uses a

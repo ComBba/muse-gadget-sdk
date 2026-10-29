@@ -85,6 +85,7 @@ void muse_pixel_scale(uint16_t *dst, int stride_px, int x0, int x1, int y0, int 
 
 GOOD_A = renderer(0x3366CC)
 GOOD_B = renderer(0xCC6633)
+GOOD_PREV = renderer(0x66CC33)
 NO_BUILD = renderer(0x11AA11).replace("memset(s_px, 0, sizeof(s_px));", "memset(s_px, 0, sizeof(s_px))")
 OUT_OF_BOUNDS = renderer(0xAA1111, "    s_px[MUSE_PX_H][MUSE_PX_W + 100] = 2;\n")
 
@@ -134,9 +135,15 @@ class Installing(unittest.TestCase):
         quiet.start()
         self.addCleanup(quiet.stop)
         Path(self.active).write_text(GOOD_A)
+        Path(self.active + ".prev").write_text(GOOD_PREV)
 
     def active_text(self):
         return Path(self.active).read_text() if os.path.exists(self.active) else None
+
+    def assertUntouched(self):
+        """Your avatar and the one before it are as they were."""
+        self.assertEqual(self.active_text(), GOOD_A)
+        self.assertEqual(Path(self.active + ".prev").read_text(), GOOD_PREV)
 
     def recoverable(self, code):
         """`code` is still on disk in the avatar directory, under any name."""
@@ -154,32 +161,46 @@ class Installing(unittest.TestCase):
     def test_a_candidate_that_does_not_build_leaves_the_avatar(self):
         with self.assertRaises(avatar.Stop):
             avatar.make_avatar(None, None, fenced(NO_BUILD))
-        self.assertEqual(self.active_text(), GOOD_A)
+        self.assertUntouched()
 
     def test_a_candidate_that_crashes_leaves_the_avatar(self):
         with self.assertRaises(avatar.Stop):
             avatar.make_avatar(None, None, fenced(OUT_OF_BOUNDS))
-        self.assertEqual(self.active_text(), GOOD_A)
+        self.assertUntouched()
 
     def test_failed_repair_rounds_keep_the_original(self):
         board = FakeBoard(chat_reply(fenced(NO_BUILD)), chat_reply(fenced(OUT_OF_BOUNDS)))
         with self.assertRaises(avatar.Stop):
             avatar.make_avatar(board, None, fenced(NO_BUILD))
         self.assertEqual(len(board.sent), 2)                 # both repair rounds were asked for
-        self.assertEqual(self.active_text(), GOOD_A)
-        self.assertTrue(self.recoverable(GOOD_A))
+        self.assertUntouched()
 
     def test_a_cut_off_reply_is_not_installed(self):
         board = FakeBoard(chat_reply(fenced(GOOD_B), complete=False))
         with self.assertRaises(avatar.Stop):
             avatar.make_avatar(board, None, avatar.ask(board, "draw yourself", "reply"))
-        self.assertEqual(self.active_text(), GOOD_A)
+        self.assertUntouched()
 
     def test_a_reply_with_lost_lines_is_not_installed(self):
         board = FakeBoard(chat_reply(fenced(GOOD_B), lost=2))
         with self.assertRaises(avatar.Stop):
             avatar.make_avatar(board, None, avatar.ask(board, "draw yourself", "reply"))
-        self.assertEqual(self.active_text(), GOOD_A)
+        self.assertUntouched()
+
+    def test_a_reply_that_does_not_add_up_is_not_installed(self):
+        r = chat_reply(fenced(GOOD_B))
+        r.sizes[0] += 1   # the board counted a byte more than arrived, with no line missing
+        with self.assertRaises(avatar.Stop) as stop:
+            avatar.ask(FakeBoard(r), "draw yourself", "reply")
+        self.assertIn("don't add up", str(stop.exception))
+        self.assertNotIn("0 console line", str(stop.exception))
+        self.assertUntouched()
+
+    def test_the_same_avatar_again_keeps_the_one_before(self):
+        avatar.make_avatar(None, None, fenced(GOOD_B))
+        avatar.make_avatar(None, None, fenced(GOOD_B))
+        self.assertEqual(self.active_text().strip(), GOOD_B.strip())
+        self.assertEqual(Path(self.active + ".prev").read_text(), GOOD_A)
 
     def test_a_cut_off_reply_is_kept_for_you_to_look_at(self):
         board = FakeBoard(chat_reply(fenced(GOOD_B), complete=False))
@@ -200,11 +221,11 @@ class Installing(unittest.TestCase):
         self.assertEqual([n for n in os.listdir(self.dir) if n.endswith(avatar.TMP_SUFFIX)], [])
 
 
-class FirmwareBuild(Installing):
+class FirmwareBuild(unittest.TestCase):
     """With a board, the candidate's firmware builds in a copy of the tree, never in yours."""
 
     def setUp(self):
-        super().setUp()
+        Installing.setUp(self)
         self.calls = []
         self.result = (True, "built")
         self.log = ""
@@ -228,6 +249,8 @@ class FirmwareBuild(Installing):
 
     image = True
     flash_result = (True, "flashed")
+    active_text = Installing.active_text
+    assertUntouched = Installing.assertUntouched
 
     def test_it_builds_the_candidate_in_a_copy_and_keeps_that(self):
         made = avatar.make_avatar(None, "s3", fenced(GOOD_B))
@@ -243,14 +266,30 @@ class FirmwareBuild(Installing):
         self.log = "components/muse/avatar/muse_pixel.c:12:5: error: oops\n  x\n  ^\n"
         with self.assertRaises(avatar.Stop):
             avatar.make_avatar(None, "s3", fenced(GOOD_B))
-        self.assertEqual(self.active_text(), GOOD_A)
+        self.assertUntouched()
+
+    def test_a_failed_rounds_tree_goes_at_once(self):
+        self.result = (False, "failed")
+        self.log = "components/muse/avatar/muse_pixel.c:12:5: error: oops\n  x\n  ^\n"
+        board = FakeBoard(chat_reply(fenced(GOOD_B)))
+        roots = []
+        real = avatar.ask
+
+        def ask(*a):
+            roots.append(self.calls[-1][1])   # the first round's tree, built and failed
+            self.assertFalse(os.path.exists(roots[-1]))
+            self.result = (True, "built")
+            return real(*a)
+        with mock.patch.object(avatar, "ask", ask):
+            avatar.make_avatar(board, "s3", fenced(GOOD_B))
+        self.assertEqual(len(roots), 1)
 
     def test_a_firmware_build_error_elsewhere_leaves_yours(self):
         self.result = (False, "failed")
         self.log = "main/app.c:1:1: error: unrelated\n"
         with self.assertRaises(avatar.Stop):
             avatar.make_avatar(None, "s3", fenced(GOOD_B))
-        self.assertEqual(self.active_text(), GOOD_A)
+        self.assertUntouched()
 
 
 class SameConfiguration(unittest.TestCase):
@@ -347,7 +386,7 @@ class TreeCopy(unittest.TestCase):
             src = Path(tmp, "esp32")
             for rel in ("main/app.c", "components/muse/muse_ui.c", "build-muse-x/app.bin", "managed_components/c/x",
                         "dependencies.lock", "components/muse/avatar/muse_pixel.c",
-                        "components/muse/avatar/muse_pixel.c.prev"):
+                        "components/muse/avatar/muse_pixel.c.prev", "tmp/x", ".cache/clangd/x", "gifs/idle.gif"):
                 Path(src, rel).parent.mkdir(parents=True, exist_ok=True)
                 Path(src, rel).write_text(rel)
             with mock.patch.object(avatar, "ROOT", str(src)), \
