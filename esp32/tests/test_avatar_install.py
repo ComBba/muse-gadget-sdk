@@ -299,6 +299,28 @@ class FirmwareBuild(unittest.TestCase):
         self.assertEqual(avatar.build_errors("s3", root).splitlines()[0],
                          "components/muse/avatar/muse_pixel.c:12:5: error: oops")
 
+    def test_errors_under_a_linked_path_name_your_avatar(self):
+        base = os.path.realpath(self.tmp)
+        real = os.path.join(base, "real") + os.path.join(base, "x")   # the plain path is part of the real one
+        os.makedirs(real)
+        os.symlink(real, os.path.join(base, "x"))
+        plain = os.path.join(base, "x", "muse_pixel.c")
+        Path(plain).write_text(GOOD_B)
+        self.assertEqual(avatar.clip(f"{os.path.realpath(plain)}:1:2: error: e\n{plain}:3:4: note: n", candidate=plain),
+                         "components/muse/avatar/muse_pixel.c:1:2: error: e\n"
+                         "components/muse/avatar/muse_pixel.c:3:4: note: n")
+
+    def test_a_refused_build_leaves_no_staged_previews(self):
+        def render(src, out):   # previews without needing Pillow here
+            os.makedirs(out, exist_ok=True)
+            Path(out, "idle.gif").write_bytes(b"GIF89a")
+            return [(os.path.join(out, "idle.gif"), 1)]
+        self.image = False
+        with mock.patch.object(avatar.make_gifs, "render", render), self.assertRaises(avatar.Stop):
+            avatar.make_avatar(None, "s3", fenced(GOOD_B))
+        self.assertEqual([n for n in os.listdir(self.dir) if n.startswith(".gifs-")], [])
+        self.assertUntouched()
+
     def test_a_firmware_build_error_elsewhere_leaves_yours(self):
         self.result = (False, "failed")
         self.log = "main/app.c:1:1: error: unrelated\n"

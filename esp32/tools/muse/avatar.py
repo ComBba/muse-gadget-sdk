@@ -243,7 +243,7 @@ def description(code):
 def clip(out, n=ERROR_LINES, candidate=None):
     """The first `n` lines of compiler output, with paths relative to esp32/ (they go to Muse).
     `candidate`, the scratch copy of Muse's file that was checked, is named as the avatar's own."""
-    for path in {candidate, os.path.realpath(candidate)} if candidate else ():
+    for path in sorted({candidate, os.path.realpath(candidate)}, key=len, reverse=True) if candidate else ():
         out = out.replace(path, AVATAR_NAME)
     return "\n".join([l for l in out.replace(ROOT + os.sep, "").splitlines() if l.strip()][:n])
 
@@ -537,6 +537,7 @@ def make_avatar(board, key, reply, work=None):
     Only once it passes does it become your avatar. Returns Made(GIF previews, built tree)."""
     own = work is None
     work = work or new_work()
+    gifs_dir = None
     try:
         for attempt in range(FIX_ROUNDS + 1):
             save_reply(reply)
@@ -586,6 +587,8 @@ def make_avatar(board, key, reply, work=None):
             reply = ask(board, "That muse_pixel.c doesn't work:\n\n```\n" + errors + "\n```\n\nFix it and send "
                         "the whole file again, the same way: one ```c block and nothing after it.", "fix")
     finally:
+        if gifs_dir:
+            shutil.rmtree(gifs_dir, ignore_errors=True)   # a failed candidate's; a promoted one's has moved
         if own:
             shutil.rmtree(work, ignore_errors=True)
 

@@ -383,9 +383,11 @@ python3 tools/muse/avatar.py --edit "CHANGE"    # change the one they have
 It checks the board, asks their Muse for the renderer through the board,
 checks it on the host and builds the firmware with it in a copy of the tree,
 and only then saves it to `components/muse/avatar/muse_pixel.c` (gitignored)
-and flashes. Progress and errors go to stderr. Relay the
-line that starts with `Muse drew:` and the GIF paths. On failure, pass the
-message on. The exit status says what kind of failure it was:
+and flashes. It doesn't rebuild their own `build-muse-*/`: flashing that with
+`tools/muse/board.sh` before a `board.sh build` puts the previous avatar back.
+Progress and errors go to stderr. Relay the line that starts with `Muse drew:`
+and the GIF paths. On failure, pass the message on. The exit status says what
+kind of failure it was:
 
 - **2**: no board, or it can't do this (or another `avatar.py` is still
   running: let it finish). If it says the board doesn't answer,
