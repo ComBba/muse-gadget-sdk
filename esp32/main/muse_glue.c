@@ -45,6 +45,9 @@
 #include "muse_mem.h"
 #include "muse_settings.h"
 #include "muse_state.h"
+#if CONFIG_MUSE_REALTIME_VOICE
+#include "muse_voice_call.h"
+#endif
 
 static const char *TAG = "link.muse";
 
@@ -418,6 +421,7 @@ static const muse_link_ops_t s_ops = {
     .req_cancel = noise_ctrl_req_cancel,
     .power_save = noise_ctrl_set_power_save,
     .wifi_nap = op_wifi_nap,
+    .ble_quiet = ble_server_set_quiet,
     .wifi_saved = op_wifi_saved,
     .wifi_forget = op_wifi_forget,
 };
@@ -481,6 +485,11 @@ static bool none_nearby_lately(void) {
     return !seen;
 }
 
+// CONFIG_HOMEHUB_WIFI_SSID (a development override, never saved to NVS):
+// Link joins that network itself and wifi_mgr rejoins it, so Muse's keeper
+// leaves Wi-Fi alone instead of dropping a network it has no copy of.
+#define WIFI_OVERRIDE (CONFIG_HOMEHUB_WIFI_SSID[0] != '\0')
+
 static void keeper_task(void *arg) {
     (void)arg;
     xEventGroupWaitBits(s_ready, BIT_LINK | BIT_MUSE, pdFALSE, pdTRUE, portMAX_DELAY);
@@ -491,6 +500,7 @@ static void keeper_task(void *arg) {
     int64_t away_backoff = AWAY_MIN_US;
     uint32_t pending = KEEP_BLE;
     bool napped = false;
+    bool wifi_stopped = false;
     bool setup_done = config_setup_complete();
     if (setup_done && muse_settings_ble_on()) {
         // Registered devices boot with the phone companion off; the settings
@@ -536,12 +546,17 @@ static void keeper_task(void *arg) {
             }
         }
 
-        bool have = s_ssid[0] != '\0';
+        bool have = s_ssid[0] != '\0' || WIFI_OVERRIDE;
         napped = napped && s_nap;
-        if (!muse_settings_wifi_on() || !have) {
-            if (wifi_mgr_is_connected()) {
+        bool stop_wifi = !muse_settings_wifi_on() || !have;
+        wifi_stopped = wifi_stopped && stop_wifi;
+        if (stop_wifi) {
+            // A dropped connection may still have a reconnect timer pending.
+            // Cancel it once on entry, even without an IP address. Retry if a
+            // setup operation owns the gate, as for the nap below.
+            if ((!wifi_stopped || wifi_mgr_is_connected()) && app_wifi_nap()) {
                 ESP_LOGI(TAG, "wifi %s; disconnecting", have ? "off" : "forgotten");
-                wifi_mgr_disconnect();
+                wifi_stopped = true;
             }
             joined_gen = s_creds_gen;
             s_away = false;
@@ -553,7 +568,7 @@ static void keeper_task(void *arg) {
                 ESP_LOGI(TAG, "screen off a while; left wifi");
                 napped = true;
             }
-        } else if (wifi_mgr_is_connected() && joined_gen != s_creds_gen) {
+        } else if (!WIFI_OVERRIDE && wifi_mgr_is_connected() && joined_gen != s_creds_gen) {
             ESP_LOGI(TAG, "wifi network changed; rejoining");
             wifi_mgr_disconnect();
             next_try = 0;
@@ -562,7 +577,7 @@ static void keeper_task(void *arg) {
             backoff = RETRY_MIN_US;
             away_backoff = AWAY_MIN_US;
             s_away = false;
-        } else if (!s_editing && esp_timer_get_time() >= next_try) {
+        } else if (!WIFI_OVERRIDE && !s_editing && esp_timer_get_time() >= next_try) {
             // NVS has Muse's changes (s_editing is clear), so Link joins from
             // the same list the settings show.
             uint32_t gen = s_creds_gen;
@@ -703,3 +718,10 @@ void muse_glue_led_state(led_state_t state) {
     // Pairing, provisioning and unpair all move the LED; pick up their config.
     keeper_kick(KEEP_RELOAD);
 }
+
+#if CONFIG_MUSE_REALTIME_VOICE
+// The call names Link's node as its device (a RAM string set at boot).
+const char *muse_voice_call_device_id(void) {
+    return identity_node_id();
+}
+#endif
